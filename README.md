@@ -10,7 +10,7 @@ As more concrete example, Hadoop DFS(HDFS) requires ssh running on all slave nod
 
 Usage
 =====
-See the result of `minit --help` and [examples/sshd/Dockerfile](https://github.com/kawamuray/minit/examples/sshd/Dockerfile).
+See the result of `minit --help` and [examples/sshd/Dockerfile](https://github.com/kawamuray/minit/blob/master/examples/sshd/Dockerfile).
 
 Capability
 ==========
