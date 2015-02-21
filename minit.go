@@ -17,26 +17,33 @@ const (
 	SyslogSocket = "/dev/log"
 )
 
-func sysReboot() error {
+func sysReboot(chQuit chan struct{}) error {
 	log.Printf("rebooting")
+	close(chQuit)
+	time.Sleep(1 * time.Second)
 	syscall.Sync()
 	return syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
 }
 
-func sysHalt() error {
-	syscall.Sync()
+func sysHalt(chQuit chan struct{}) error {
 	log.Printf("halting")
+	close(chQuit)
+	time.Sleep(1 * time.Second)
+	syscall.Sync()
 	return syscall.Reboot(syscall.LINUX_REBOOT_CMD_HALT)
 }
 
-func sysPoweroff() error {
-	syscall.Sync()
+func sysPoweroff(chQuit chan struct{}) error {
 	log.Printf("power off")
+	close(chQuit)
+	time.Sleep(1 * time.Second)
+	syscall.Sync()
 	return syscall.Reboot(syscall.LINUX_REBOOT_CMD_POWER_OFF)
 }
 
-func sysReinit() error {
+func sysReinit(chQuit chan struct{}) error {
 	log.Printf("restarting init(pid=1), sending signals for all children")
+	close(chQuit)
 	if err := syscall.Kill(-1, syscall.SIGTERM); err != nil {
 		return fmt.Errorf("failed to send SIGTERM for all processes: %s", err)
 	}
@@ -48,7 +55,7 @@ func sysReinit() error {
 	return syscall.Exec(os.Args[0], os.Args, os.Environ())
 }
 
-var signalHandlers = map[os.Signal]func() error{
+var signalHandlers = map[os.Signal]func(chan struct{}) error{
 	syscall.SIGHUP:  sysReboot,
 	syscall.SIGINT:  sysReboot,
 	syscall.SIGPWR:  sysHalt,
@@ -66,9 +73,9 @@ func setupSignal() chan os.Signal {
 	return ch
 }
 
-func handleSignal(sig os.Signal) error {
+func handleSignal(sig os.Signal, chQuit chan struct{}) error {
 	if handler := signalHandlers[sig]; handler != nil {
-		return handler()
+		return handler(chQuit)
 	}
 	return nil
 }
@@ -92,18 +99,22 @@ func handleSyslog(ln net.Listener) {
 		conn, err := ln.Accept()
 		if err != nil {
 			log.Printf("failed to accept syslog connection request: %s", err)
-			continue
+			break
 		}
 		go handleSyslogConn(conn)
 	}
 }
 
-func serviceSyslog() error {
+func serviceSyslog(chQuit chan struct{}) error {
 	ln, err := net.Listen("unix", SyslogSocket)
 	if err != nil {
 		return fmt.Errorf("failed to create syslog socket %s: %s", SyslogSocket, err)
 	}
 	go handleSyslog(ln)
+	go func() {
+		<-chQuit
+		ln.Close()
+	}()
 	return nil
 }
 
@@ -143,10 +154,13 @@ func collectChildren(block bool) error {
 }
 
 func startInit(init []string) error {
-	chSignal := setupSignal()
+	var (
+		chSignal = setupSignal()
+		chQuit   = make(chan struct{})
+	)
 
 	if opts.Syslog {
-		if err := serviceSyslog(); err != nil {
+		if err := serviceSyslog(chQuit); err != nil {
 			return err
 		}
 	}
@@ -166,7 +180,7 @@ func startInit(init []string) error {
 			return err
 		case sig := <-chSignal:
 			log.Printf("received signal %d", sig)
-			if err := handleSignal(sig); err != nil {
+			if err := handleSignal(sig, chQuit); err != nil {
 				return err
 			}
 		}
