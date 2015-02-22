@@ -23,4 +23,4 @@ Yuto Kawamura(kawamuray) <kawamuray.dadada {at} gmail.com>
 
 License
 =======
-MIT License. Please see LICENSE.
+MIT License. Please see [LICENSE](https://raw.githubusercontent.com/kawamuray/minit/master/LICENSE).
